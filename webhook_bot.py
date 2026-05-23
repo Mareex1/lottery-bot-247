@@ -2,10 +2,9 @@ import os
 import sqlite3
 import asyncio
 import json
-import threading
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from flask import Flask
 
 # 🔧 CONFIG
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -168,38 +167,35 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
     await update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="Markdown")
 
-async def on_startup(app: Application):
-    print("🔄 Starting bot...")
-    await sync_channel_full(app)
-    print("✅ Bot is online!")
+# 🚀 Flask app for health checks
+app = Flask(__name__)
 
-# 🌐 Simple ping server for UptimeRobot
-class PingHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is alive!")  # Fixed: removed emoji
-    def log_message(self, format, *args):
-        pass
+@app.route('/')
+def health():
+    return "✅ Bot is online!", 200
 
-def run_ping_server():
-    server = HTTPServer(('0.0.0.0', 8080), PingHandler)
-    server.serve_forever()
-
-def main():
+# 🤖 Telegram bot setup
+def run_bot():
     init_database()
+    application = Application.builder().token(BOT_TOKEN).build()
     
-    # Start ping server in background
-    threading.Thread(target=run_ping_server, daemon=True).start()
-    print("🌐 Ping server running on port 8080")
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("claim", claim))
+    application.add_handler(CommandHandler("get", get_status))
+    application.add_handler(CommandHandler("stats", stats))
     
-    app = Application.builder().token(BOT_TOKEN).post_init(on_startup).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("claim", claim))
-    app.add_handler(CommandHandler("get", get_status))
-    app.add_handler(CommandHandler("stats", stats))
+    # Run sync on startup
+    asyncio.get_event_loop().run_until_complete(sync_channel_full(application))
+    print("✅ Bot ready!")
     
-    app.run_polling()
+    # Run polling
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    import threading
+    # Run bot in background thread
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Run Flask for health checks
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
