@@ -4,7 +4,6 @@ import asyncio
 import json
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from flask import Flask
 
 # 🔧 CONFIG
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -32,7 +31,7 @@ def init_database():
     cursor.execute("DELETE FROM claims_log WHERE id <= (SELECT MAX(id) - 50 FROM claims_log)")
     conn.commit()
     conn.close()
-    print("✅ Database ready")
+    print("✅ Database initialized")
 
 def load_ids():
     if os.path.exists(CONFIG_FILE):
@@ -167,35 +166,26 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
     await update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="Markdown")
 
-# 🚀 Flask app for health checks
-app = Flask(__name__)
+async def post_init(app: Application):
+    print("🔄 Starting bot initialization...")
+    await sync_channel_full(app)
+    print("✅ Bot is ready and listening!")
 
-@app.route('/')
-def health():
-    return "✅ Bot is online!", 200
-
-# 🤖 Telegram bot setup
-def run_bot():
+def main():
     init_database()
-    application = Application.builder().token(BOT_TOKEN).build()
     
+    # Build the application
+    application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("claim", claim))
     application.add_handler(CommandHandler("get", get_status))
     application.add_handler(CommandHandler("stats", stats))
     
-    # Run sync on startup
-    asyncio.get_event_loop().run_until_complete(sync_channel_full(application))
-    print("✅ Bot ready!")
-    
-    # Run polling
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Run with polling (simple and reliable)
+    print("🚀 Starting bot...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == '__main__':
-    import threading
-    # Run bot in background thread
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    # Run Flask for health checks
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
+    main()
