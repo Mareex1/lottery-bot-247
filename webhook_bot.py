@@ -2,6 +2,8 @@ import os
 import sqlite3
 import asyncio
 import json
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -10,12 +12,13 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@comejoin1a")
 DB_FILE = "lottery_numbers.db"
 CONFIG_FILE = "channel_ids.json"
+PORT = int(os.getenv("PORT", 10000))
 
 db_lock = asyncio.Lock()
 SHOW_RECENT = 6
 BAR_LENGTH = 40
 
-# 📦 Database Init
+#  Database Init
 def init_database():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -68,7 +71,7 @@ async def sync_channel_full(app):
 
     pct = round((claimed / 5000) * 100, 1)
     bar = "🟢" * int((claimed/5000)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/5000)*BAR_LENGTH))
-    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n🟢 Available: {5000-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
+    board = f" LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n🟢 Available: {5000-claimed}\n{bar}\n\n Recent Claims:\n"
     board += "\n".join([f"• #{n} by {u}" for n, u in recent]) or "• No claims yet"
     
     cfg["board"] = await edit_or_send(app, cfg.get("board"), CHANNEL_ID, board)
@@ -115,8 +118,9 @@ async def sync_channel_fast(app, claimed_num):
     cfg["grids"][key] = await edit_or_send(app, cfg["grids"].get(key), CHANNEL_ID, text)
     save_ids(cfg)
 
+# 🎬 Commands
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🎫 Welcome! Type `/claim <1-5000>` to take a number.")
+    await update.message.reply_text(" Welcome! Type `/claim <1-5000>` to take a number.")
 
 async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -166,26 +170,41 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
     await update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="Markdown")
 
-async def post_init(app: Application):
-    print("🔄 Starting bot initialization...")
+# 🌐 Keep-alive server for Render (required for free tier)
+class KeepAliveHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is online")
+    def log_message(self, format, *args): pass
+
+def run_keepalive():
+    server = HTTPServer(('0.0.0.0', PORT), KeepAliveHandler)
+    server.serve_forever()
+
+# ✅ Startup hook (runs before polling starts)
+async def on_startup(app: Application):
+    print("🔄 Syncing channel...")
     await sync_channel_full(app)
     print("✅ Bot is ready and listening!")
 
 def main():
     init_database()
     
-    # Build the application
-    application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
-    
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("claim", claim))
-    application.add_handler(CommandHandler("get", get_status))
-    application.add_handler(CommandHandler("stats", stats))
-    
-    # Run with polling (simple and reliable)
-    print("🚀 Starting bot...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    # Start keep-alive server in background so Render doesn't kill the app
+    threading.Thread(target=run_keepalive, daemon=True).start()
+    print(f"🌐 Keep-alive server running on port {PORT}")
+
+    # Build Telegram app
+    app = Application.builder().token(BOT_TOKEN).post_init(on_startup).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("claim", claim))
+    app.add_handler(CommandHandler("get", get_status))
+    app.add_handler(CommandHandler("stats", stats))
+
+    # Start polling (blocks main thread, runs event loop)
+    print(" Starting bot polling...")
+    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == '__main__':
     main()
