@@ -2,9 +2,10 @@ import os
 import sqlite3
 import asyncio
 import json
-import time
+import threading
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # 🔧 CONFIG
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -165,41 +166,4 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect(DB_FILE)
         taken = conn.cursor().execute("SELECT COUNT(*) FROM numbers WHERE taken=1").fetchone()[0]
         conn.close()
-    await update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="Markdown")
-
-async def on_startup(app: Application):
-    print("🔄 Starting bot...")
-    await sync_channel_full(app)
-    print("✅ Bot is online!")
-
-def main():
-    init_database()
-    app = Application.builder().token(BOT_TOKEN).post_init(on_startup).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("claim", claim))
-    app.add_handler(CommandHandler("get", get_status))
-    app.add_handler(CommandHandler("stats", stats))
-    
-    # Keep alive ping for UptimeRobot
-    import threading
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-    
-    class PingHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"✅ Bot is alive!")
-        def log_message(self, format, *args):
-            pass
-    
-    def run_ping_server():
-        server = HTTPServer(('0.0.0.0', 8080), PingHandler)
-        server.serve_forever()
-    
-    threading.Thread(target=run_ping_server, daemon=True).start()
-    print("🌐 Ping server running on port 8080")
-    
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+    await update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="
