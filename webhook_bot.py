@@ -2,12 +2,11 @@ import os
 import sqlite3
 import asyncio
 import json
-import threading
+import time
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from flask import Flask
 
-# 🔧 CONFIG (Securely loaded from environment)
+# 🔧 CONFIG
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@comejoin1a")
 DB_FILE = "lottery_numbers.db"
@@ -33,6 +32,7 @@ def init_database():
     cursor.execute("DELETE FROM claims_log WHERE id <= (SELECT MAX(id) - 50 FROM claims_log)")
     conn.commit()
     conn.close()
+    print("✅ Database ready")
 
 def load_ids():
     if os.path.exists(CONFIG_FILE):
@@ -49,7 +49,7 @@ async def edit_or_send(app, msg_id, chat_id, text):
         try:
             await app.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text)
             return msg_id
-        except Exception:
+        except:
             pass
     msg = await app.bot.send_message(chat_id=chat_id, text=text)
     return msg.message_id
@@ -84,7 +84,7 @@ async def sync_channel_full(app):
         cfg["grids"][key] = await edit_or_send(app, cfg["grids"].get(key), CHANNEL_ID, text)
         save_ids(cfg)
         await asyncio.sleep(0.4)
-    print("✅ Full channel sync complete")
+    print("✅ Channel synced")
 
 async def sync_channel_fast(app, claimed_num):
     cfg = load_ids()
@@ -117,7 +117,7 @@ async def sync_channel_fast(app, claimed_num):
     save_ids(cfg)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🎫 Welcome! Type `/claim <1-5000>` to take a number.\n📌 Numbers update instantly in the channel!")
+    await update.message.reply_text("🎫 Welcome! Type `/claim <1-5000>` to take a number.")
 
 async def claim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -168,27 +168,38 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="Markdown")
 
 async def on_startup(app: Application):
-    print("🔄 Initializing channel messages...")
+    print("🔄 Starting bot...")
     await sync_channel_full(app)
-    print("✅ Bot ready.")
+    print("✅ Bot is online!")
 
-# 🤖 Telegram Bot Runner (runs in background)
-def run_telegram_bot():
+def main():
     init_database()
     app = Application.builder().token(BOT_TOKEN).post_init(on_startup).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("claim", claim))
     app.add_handler(CommandHandler("get", get_status))
     app.add_handler(CommandHandler("stats", stats))
+    
+    # Keep alive ping for UptimeRobot
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    
+    class PingHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"✅ Bot is alive!")
+        def log_message(self, format, *args):
+            pass
+    
+    def run_ping_server():
+        server = HTTPServer(('0.0.0.0', 8080), PingHandler)
+        server.serve_forever()
+    
+    threading.Thread(target=run_ping_server, daemon=True).start()
+    print("🌐 Ping server running on port 8080")
+    
     app.run_polling()
 
-# 🌐 Flask Health Server (keeps Render awake)
-health_app = Flask(__name__)
-@health_app.route('/')
-def health():
-    return "✅ Bot is online 24/7!", 200
-
-# 🔀 Start both
 if __name__ == "__main__":
-    threading.Thread(target=run_telegram_bot, daemon=True).start()
-    health_app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
+    main()
