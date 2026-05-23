@@ -166,4 +166,40 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn = sqlite3.connect(DB_FILE)
         taken = conn.cursor().execute("SELECT COUNT(*) FROM numbers WHERE taken=1").fetchone()[0]
         conn.close()
-    await update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="
+    await update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="Markdown")
+
+async def on_startup(app: Application):
+    print("🔄 Starting bot...")
+    await sync_channel_full(app)
+    print("✅ Bot is online!")
+
+# 🌐 Simple ping server for UptimeRobot
+class PingHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")  # Fixed: removed emoji
+    def log_message(self, format, *args):
+        pass
+
+def run_ping_server():
+    server = HTTPServer(('0.0.0.0', 8080), PingHandler)
+    server.serve_forever()
+
+def main():
+    init_database()
+    
+    # Start ping server in background
+    threading.Thread(target=run_ping_server, daemon=True).start()
+    print("🌐 Ping server running on port 8080")
+    
+    app = Application.builder().token(BOT_TOKEN).post_init(on_startup).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("claim", claim))
+    app.add_handler(CommandHandler("get", get_status))
+    app.add_handler(CommandHandler("stats", stats))
+    
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
