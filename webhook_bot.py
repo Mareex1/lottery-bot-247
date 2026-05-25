@@ -176,15 +176,30 @@ def parse_range(args):
         return num, num, None
 
 def start_cmd(update: Update, context: CallbackContext):
-    update.message.reply_text(
-        "🎫 Welcome to the Lottery Bot!\n\n"
-        "• `/get <num>` or `/get <start>-<end>` → Select numbers\n"
-        "• `/un <num>` or `/un <start>-<end>` → Release numbers\n"
-        "• `/check <num>` → Interactive buttons\n"
-        "• `/reset` → Delete old grid & post fresh\n"
-        "• `/stats` → View summary\n"
-        "• `/draw` → Pick 3 random winners 🎲"
+    # Get current stats
+    conn = sqlite3.connect(DB_FILE)
+    taken = conn.cursor().execute("SELECT COUNT(*) FROM numbers WHERE taken=1").fetchone()[0]
+    conn.close()
+    
+    welcome_text = (
+        "🎉 **WELCOME TO THE LOTTERY BOT!** 🎉\n\n"
+        "📊 **Current Status:**\n"
+        f"• Numbers claimed: {taken}/5000\n"
+        f"• Available: {5000-taken}\n\n"
+        "🎯 **How to Play:**\n"
+        "• `/get 42` → Claim number 42\n"
+        "• `/get 100-200` → Claim numbers 100 to 200\n"
+        "• `/check 42` → Check if number is taken (with buttons)\n"
+        "• `/un 42` → Release number 42\n\n"
+        "🎲 **Other Commands:**\n"
+        "• `/stats` → View full statistics\n"
+        "• `/draw` → Pick 3 random winners\n"
+        "• `/reset` → Reset everything (admin only)\n"
+        "• `/ping` → Check if bot is online\n\n"
+        "📌 **Check the channel** for the live number grid!"
     )
+    
+    update.message.reply_text(welcome_text, parse_mode="Markdown")
 
 def ping_cmd(update: Update, context: CallbackContext):
     update.message.reply_text(f"✅ Bot is alive! Uptime: {time.strftime('%Y-%m-%d %H:%M:%S')}")
