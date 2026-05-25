@@ -32,7 +32,7 @@ def init_database():
     cursor.execute("DELETE FROM claims_log WHERE id <= (SELECT MAX(id) - 50 FROM claims_log)")
     conn.commit()
     conn.close()
-    print("✅ Database initialized")
+    print("✅ Database initialized (data persists across restarts)")
 
 def load_ids():
     if os.path.exists(CONFIG_FILE):
@@ -68,7 +68,7 @@ def sync_channel_full(bot):
 
     pct = round((claimed / 5000) * 100, 1)
     bar = "🟢" * int((claimed/5000)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/5000)*BAR_LENGTH))
-    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n🟢 Available: {5000-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
+    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n Available: {5000-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
     board += "\n".join([f"• #{n} by {u}" for n, u in recent]) or "• No claims yet"
     
     cfg["board"] = edit_or_send(bot, cfg.get("board"), CHANNEL_ID, board)
@@ -79,94 +79,119 @@ def sync_channel_full(bot):
         end = start + 499
         key = f"{start}-{end}"
         items = [f"{n} {'✅' if n in taken else '❌'}" for n in range(start, end + 1)]
-        text = f"📋 Numbers {start}-{end}:\n" + " ".join(items)
+        text = f" Numbers {start}-{end}:\n" + " ".join(items)
         cfg["grids"][key] = edit_or_send(bot, cfg["grids"].get(key), CHANNEL_ID, text)
         save_ids(cfg)
         time.sleep(0.4)
     print("✅ Channel synced")
 
-def sync_channel_fast(bot, claimed_num):
-    cfg = load_ids()
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM numbers WHERE taken=1")
-    claimed = c.fetchone()[0]
-    c.execute("SELECT number, claimed_by FROM claims_log ORDER BY id DESC LIMIT ?", (SHOW_RECENT,))
-    recent = c.fetchall()
-    c.execute("SELECT number FROM numbers WHERE taken=1")
-    taken = set(r[0] for r in c.fetchall())
-    conn.close()
-
-    pct = round((claimed / 5000) * 100, 1)
-    bar = "🟢" * int((claimed/5000)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/5000)*BAR_LENGTH))
-    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n🟢 Available: {5000-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
-    board += "\n".join([f"• #{n} by {u}" for n, u in recent]) or "• No claims yet"
-    
-    cfg["board"] = edit_or_send(bot, cfg["board"], CHANNEL_ID, board)
-    save_ids(cfg)
-    import time; time.sleep(0.4)
-
-    start = ((claimed_num - 1) // 500) * 500 + 1
-    end = start + 499
-    key = f"{start}-{end}"
-    items = [f"{n} {'✅' if n in taken else '❌'}" for n in range(start, end + 1)]
-    text = f"📋 Numbers {start}-{end}:\n" + " ".join(items)
-    cfg["grids"][key] = edit_or_send(bot, cfg["grids"].get(key), CHANNEL_ID, text)
-    save_ids(cfg)
+#  Parse single number or range (e.g., "42" or "30-300")
+def parse_range(args):
+    if not args:
+        return None, None, "❌ Usage: `/get 55` or `/get 30-300`"
+    text = args[0].replace(" ", "")
+    if '-' in text:
+        parts = text.split('-')
+        if len(parts) != 2:
+            return None, None, "❌ Invalid range. Use: 30-300"
+        try:
+            start, end = int(parts[0]), int(parts[1])
+        except ValueError:
+            return None, None, "❌ Numbers must be integers."
+        if start > end:
+            start, end = end, start
+        if not (1 <= start <= 5000 and 1 <= end <= 5000):
+            return None, None, "❌ Range must be within 1-5000."
+        return start, end, None
+    else:
+        try:
+            num = int(text)
+        except ValueError:
+            return None, None, "❌ Invalid number."
+        if not (1 <= num <= 5000):
+            return None, None, "❌ Number must be 1-5000."
+        return num, num, None
 
 # 🎬 Commands
 def start_cmd(update: Update, context: CallbackContext):
-    update.message.reply_text("🎫 Welcome! Type `/claim <1-5000>` to take a number.")
+    update.message.reply_text(
+        "🎫 Welcome to the Lottery Bot!\n\n"
+        "• `/get <num>` or `/get <start>-<end>` → Select numbers\n"
+        "• `/un <num>` or `/un <start>-<end>` → Release numbers\n"
+        "• `/stats` → View summary\n"
+        "• `/reset` → Clear all & start fresh\n\n"
+        "📌 Channel updates automatically!"
+    )
 
-def claim_cmd(update: Update, context: CallbackContext):
-    if not context.args:
-        update.message.reply_text("❌ Usage: `/claim 55`", parse_mode="Markdown")
+def get_cmd(update: Update, context: CallbackContext):
+    start, end, err = parse_range(context.args)
+    if err:
+        update.message.reply_text(err, parse_mode="Markdown")
         return
-    try:
-        num = int(context.args[0])
-        if not (1 <= num <= 5000):
-            update.message.reply_text("❌ Must be 1-5000.")
-            return
-        
-        user = update.message.from_user.username or f"User{update.message.from_user.id}"
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("UPDATE numbers SET taken=1, claimed_by=?, claimed_at=datetime('now') WHERE number=? AND taken=0", (user, num))
-        if c.rowcount == 0:
-            c.execute("SELECT claimed_by FROM numbers WHERE number=?", (num,))
-            row = c.fetchone()
-            update.message.reply_text(f"❌ #{num} already taken by {row[0] or 'unknown'}!")
-            conn.close()
-            return
-        c.execute("INSERT INTO claims_log (number, claimed_by, claimed_at) VALUES (?, ?, datetime('now'))", (num, user))
-        conn.commit()
-        conn.close()
-        
-        sync_channel_fast(context.bot, num)
-        update.message.reply_text(f"✅ Claimed **#{num}**!", parse_mode="Markdown")
-    except ValueError:
-        update.message.reply_text("❌ Send a valid number.")
 
-def get_status_cmd(update: Update, context: CallbackContext):
-    if not context.args:
-        update.message.reply_text("❌ `/get 55`", parse_mode="Markdown")
-        return
-    try:
-        num = int(context.args[0])
-        if not (1 <= num <= 5000):
-            update.message.reply_text("❌ 1-5000 only.")
-            return
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT taken, claimed_by FROM numbers WHERE number=?", (num,))
-        row = c.fetchone()
-        conn.close()
-        if row and row[0] == 1:
-            update.message.reply_text(f"#{num}: ✅ Taken by {row[1] or 'unknown'}", parse_mode="Markdown")
+    user = update.message.from_user.username or f"User{update.message.from_user.id}"
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("BEGIN TRANSACTION")
+    
+    claimed = []
+    already = []
+    for n in range(start, end + 1):
+        c.execute("UPDATE numbers SET taken=1, claimed_by=?, claimed_at=datetime('now') WHERE number=? AND taken=0", (user, n))
+        if c.rowcount > 0:
+            claimed.append(n)
+            c.execute("INSERT INTO claims_log (number, claimed_by, claimed_at) VALUES (?, ?, datetime('now'))", (n, user))
         else:
-            update.message.reply_text(f"#{num}: ❌ Available", parse_mode="Markdown")
-    except ValueError:
-        update.message.reply_text("❌ Send a valid number.")
+            already.append(n)
+    conn.commit()
+    conn.close()
+
+    msg = f"✅ Selected {len(claimed)} number(s)!"
+    if already:
+        msg += f"\n❌ {len(already)} already taken."
+    update.message.reply_text(msg, parse_mode="Markdown")
+    
+    # Update channel once after batch
+    sync_channel_full(context.bot)
+
+def un_cmd(update: Update, context: CallbackContext):
+    start, end, err = parse_range(context.args)
+    if err:
+        update.message.reply_text(err, parse_mode="Markdown")
+        return
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("BEGIN TRANSACTION")
+    
+    released = []
+    not_taken = []
+    for n in range(start, end + 1):
+        c.execute("UPDATE numbers SET taken=0, claimed_by=NULL, claimed_at=NULL WHERE number=? AND taken=1")
+        if c.rowcount > 0:
+            released.append(n)
+        else:
+            not_taken.append(n)
+    conn.commit()
+    conn.close()
+
+    msg = f"🔓 Released {len(released)} number(s)!"
+    if not_taken:
+        msg += f"\nℹ️ {len(not_taken)} were already available."
+    update.message.reply_text(msg, parse_mode="Markdown")
+    
+    sync_channel_full(context.bot)
+
+def reset_cmd(update: Update, context: CallbackContext):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE numbers SET taken=0, claimed_by=NULL, claimed_at=NULL")
+    c.execute("DELETE FROM claims_log")
+    conn.commit()
+    conn.close()
+    
+    update.message.reply_text("⚠️ All data cleared! Starting fresh.")
+    sync_channel_full(context.bot)
 
 def stats_cmd(update: Update, context: CallbackContext):
     conn = sqlite3.connect(DB_FILE)
@@ -189,26 +214,22 @@ def run_keepalive():
 def main():
     init_database()
     
-    # Start keep-alive server
     threading.Thread(target=run_keepalive, daemon=True).start()
     print(f"🌐 Keep-alive server running on port {PORT}")
     
-    # Create updater and dispatcher
     updater = Updater(BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
     
-    # Add handlers
     dp.add_handler(CommandHandler("start", start_cmd))
-    dp.add_handler(CommandHandler("claim", claim_cmd))
-    dp.add_handler(CommandHandler("get", get_status_cmd))
+    dp.add_handler(CommandHandler("get", get_cmd))
+    dp.add_handler(CommandHandler("un", un_cmd))
+    dp.add_handler(CommandHandler("reset", reset_cmd))
     dp.add_handler(CommandHandler("stats", stats_cmd))
     
-    # Sync channel on startup
     print("🔄 Syncing channel...")
     sync_channel_full(updater.bot)
     print("✅ Bot is ready and listening!")
     
-    # Start polling
     updater.start_polling()
     updater.idle()
 
