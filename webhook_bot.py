@@ -8,7 +8,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler
 from telegram.error import TelegramError
 
-# 🔧 CONFIG
+#  CONFIG
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@comejoin1a")
 DB_FILE = "lottery_numbers.db"
@@ -94,8 +94,8 @@ def update_board_only(bot):
     taken = get_taken_numbers()
     
     pct = round((claimed / 5000) * 100, 1)
-    bar = "🟢" * int((claimed/5000)*BAR_LENGTH) + "️" * (BAR_LENGTH - int((claimed/5000)*BAR_LENGTH))
-    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n🟢 Available: {5000-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
+    bar = "🟢" * int((claimed/5000)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/5000)*BAR_LENGTH))
+    board = f" LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n🟢 Available: {5000-claimed}\n{bar}\n\n Recent Claims:\n"
     board += "\n".join([f"• #{n} by {safe_md(u)}" for n, u in recent]) or "• No claims yet"
     
     if cfg.get("board"):
@@ -133,8 +133,8 @@ def sync_channel_full(bot):
 
     # 2️⃣ SEND BOARD LAST (Appears at bottom of channel)
     pct = round((claimed / 5000) * 100, 1)
-    bar = "" * int((claimed/5000)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/5000)*BAR_LENGTH))
-    board = f" LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n🟢 Available: {5000-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
+    bar = "🟢" * int((claimed/5000)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/5000)*BAR_LENGTH))
+    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n Available: {5000-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
     board += "\n".join([f"• #{n} by {safe_md(u)}" for n, u in recent]) or "• No claims yet"
     
     cfg["board"] = edit_or_send(bot, cfg.get("board"), CHANNEL_ID, board)
@@ -146,7 +146,7 @@ def sync_channel_full(bot):
 #  Parse range
 def parse_range(args):
     if not args:
-        return None, None, "❌ Usage: `/get 55` or `/get 30-300`"
+        return None, None, "❌ Usage: `/un 55` or `/un 30-300`"
     text = args[0].replace(" ", "")
     if '-' in text:
         parts = text.split('-')
@@ -172,7 +172,7 @@ def parse_range(args):
 # 🎬 Commands
 def start_cmd(update: Update, context: CallbackContext):
     update.message.reply_text(
-        "🎫 Welcome to the Lottery Bot!\n\n"
+        " Welcome to the Lottery Bot!\n\n"
         "• `/get <num>` or `/get <start>-<end>` → Select numbers\n"
         "• `/un <num>` or `/un <start>-<end>` → Release numbers\n"
         "• `/check <num>` → Interactive buttons\n"
@@ -218,13 +218,14 @@ def un_cmd(update: Update, context: CallbackContext):
     c.execute("BEGIN TRANSACTION")
     released, not_taken = [], []
     for n in range(start, end + 1):
-        c.execute("UPDATE numbers SET taken=0, claimed_by=NULL, claimed_at=NULL WHERE number=? AND taken=1")
+        # ✅ FIXED: Added (n,) parameter to the query
+        c.execute("UPDATE numbers SET taken=0, claimed_by=NULL, claimed_at=NULL WHERE number=? AND taken=1", (n,))
         if c.rowcount > 0: released.append(n)
         else: not_taken.append(n)
     conn.commit(); conn.close()
 
-    msg = f" Released {len(released)} number(s)!"
-    if not_taken: msg += f"\n️ {len(not_taken)} were already available."
+    msg = f"🔓 Released {len(released)} number(s)!"
+    if not_taken: msg += f"\nℹ️ {len(not_taken)} were already available."
     update.message.reply_text(msg, parse_mode="Markdown")
     
     block_start = ((start - 1) // 500) * 500 + 1
@@ -238,7 +239,7 @@ def reset_cmd(update: Update, context: CallbackContext):
     c.execute("UPDATE numbers SET taken=0, claimed_by=NULL, claimed_at=NULL")
     c.execute("DELETE FROM claims_log")
     conn.commit(); conn.close()
-    update.message.reply_text("⚠️ All data cleared! Starting fresh.")
+    update.message.reply_text("️ All data cleared! Starting fresh.")
     sync_channel_full(context.bot)
 
 def stats_cmd(update: Update, context: CallbackContext):
@@ -270,7 +271,7 @@ def check_cmd(update: Update, context: CallbackContext):
         text = f"Number **#{num}** is:\n❌ Available"
         keyboard = [[InlineKeyboardButton("✅ Claim", callback_data=f"claim_{num}")]]
     
-    keyboard[0].append(InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}"))
+    keyboard[0].append(InlineKeyboardButton(" Refresh", callback_data=f"refresh_{num}"))
     update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 def button_handler(update: Update, context: CallbackContext):
@@ -301,11 +302,12 @@ def button_handler(update: Update, context: CallbackContext):
                 block = ((num - 1) // 500) * 500 + 1
                 update_grid_block(context.bot, block, block + 499); time.sleep(0.5); update_board_only(context.bot)
             else:
-                query.edit_message_text(text=f"❌ #{num} is already taken!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]), parse_mode="Markdown")
+                query.edit_message_text(text=f"❌ #{num} is already taken!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(" Refresh", callback_data=f"refresh_{num}")]]), parse_mode="Markdown")
                 
         elif action == "un":
             if not is_taken or owner != user:
                 query.edit_message_text(text=f"ℹ️ You don't own #{num} anymore.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]), parse_mode="Markdown"); return
+            # ✅ FIXED: Added (num,) parameter
             c.execute("UPDATE numbers SET taken=0, claimed_by=NULL, claimed_at=NULL WHERE number=? AND taken=1", (num,))
             if c.rowcount:
                 conn.commit()
@@ -319,7 +321,7 @@ def button_handler(update: Update, context: CallbackContext):
         elif action == "refresh":
             if is_taken:
                 text = f"Number **#{num}** is:\n✅ Taken by {safe_md(owner)}"
-                kb = [[InlineKeyboardButton(" Release", callback_data=f"un_{num}"), InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]] if owner == user else [[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
+                kb = [[InlineKeyboardButton("🔓 Release", callback_data=f"un_{num}"), InlineKeyboardButton(" Refresh", callback_data=f"refresh_{num}")]] if owner == user else [[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
             else:
                 text = f"Number **#{num}** is:\n❌ Available"
                 kb = [[InlineKeyboardButton("✅ Claim", callback_data=f"claim_{num}"), InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
