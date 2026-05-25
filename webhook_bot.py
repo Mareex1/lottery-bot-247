@@ -250,7 +250,7 @@ def stats_cmd(update: Update, context: CallbackContext):
     conn.close()
     update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="Markdown")
 
-#  Draw Command (Animated, Numbers Only)
+#  Draw Command (Animated, Numbers Only) - FIXED
 def draw_cmd(update: Update, context: CallbackContext):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -262,14 +262,14 @@ def draw_cmd(update: Update, context: CallbackContext):
         update.message.reply_text("❌ No numbers have been claimed yet! Ask users to `/get` numbers first.", parse_mode="Markdown")
         return
 
-    anim_msg = update.message.reply_text("🎲 **DRAW IN PROGRESS...**\n\n🔄 Shuffling numbers...")
+    anim_msg = update.message.reply_text("🎲 **DRAW IN PROGRESS...**\n\n🔄 Shuffling numbers...", parse_mode="Markdown")
     num_to_pick = min(3, len(claimed))
     
     time.sleep(1)
-    anim_msg.edit_message_text("🎲 **DRAW IN PROGRESS...**\n\n📊 Total entries: {}\n Selecting winners...".format(len(claimed)), parse_mode="Markdown")
+    anim_msg.edit_text("🎲 **DRAW IN PROGRESS...**\n\n📊 Total entries: {}\n⏳ Selecting winners...".format(len(claimed)), parse_mode="Markdown")
     
     time.sleep(1.5)
-    anim_msg.edit_message_text(" **DRAW IN PROGRESS...**\n\n Total entries: {}\n🎯 Picking winner #1...".format(len(claimed)), parse_mode="Markdown")
+    anim_msg.edit_text("🎲 **DRAW IN PROGRESS...**\n\n📊 Total entries: {}\n🎯 Picking winner #1...".format(len(claimed)), parse_mode="Markdown")
     
     winners = random.sample(claimed, num_to_pick)
     time.sleep(2)
@@ -279,11 +279,11 @@ def draw_cmd(update: Update, context: CallbackContext):
     for i, (num,) in enumerate(winners, 1):
         text += "🥇 **#{} Place:** {}\n".format(i, num)
         if i < num_to_pick:
-            anim_msg.edit_message_text(text + "\n⏳ Picking next winner...", parse_mode="Markdown")
+            anim_msg.edit_text(text + "\n⏳ Picking next winner...", parse_mode="Markdown")
             time.sleep(2)
     
     text += "\n✨ **Congratulations to the winners!** ✨"
-    anim_msg.edit_message_text(text, parse_mode="Markdown")
+    anim_msg.edit_text(text, parse_mode="Markdown")
 
 def check_cmd(update: Update, context: CallbackContext):
     start, end, err = parse_range(context.args)
