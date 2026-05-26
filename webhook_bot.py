@@ -18,7 +18,7 @@ PORT = int(os.getenv("PORT", 10000))
 
 SHOW_RECENT = 6
 BAR_LENGTH = 40
-TOTAL_NUMBERS = 5500  # Changed from 5000 to 5500
+TOTAL_NUMBERS = 5500
 
 def safe_md(text):
     return str(text).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("]", "\\]").replace("`", "\\`")
@@ -106,7 +106,7 @@ def update_grid_block(bot, start, end):
     cfg = load_ids()
     taken = get_taken_numbers()
     key = f"{start}-{end}"
-    items = [f"{n} {'[X]' if n in taken else '[ ]'}" for n in range(start, end + 1)]  # Text symbols
+    items = [f"{n} {'[X]' if n in taken else '[ ]'}" for n in range(start, end + 1)]
     text = f"📋 Numbers {start}-{end}:\n" + " ".join(items)
     
     if key in cfg.get("grids", {}):
@@ -123,7 +123,7 @@ def sync_channel_full(bot):
     for start in range(1, TOTAL_NUMBERS + 1, 500):
         end = min(start + 499, TOTAL_NUMBERS)
         key = f"{start}-{end}"
-        items = [f"{n} {'[X]' if n in taken else '[ ]'}" for n in range(start, end + 1)]  # Text symbols
+        items = [f"{n} {'[X]' if n in taken else '[ ]'}" for n in range(start, end + 1)]
         text = f"📋 Numbers {start}-{end}:\n" + " ".join(items)
         
         cfg["grids"][key] = edit_or_send(bot, cfg["grids"].get(key), CHANNEL_ID, text)
@@ -148,7 +148,7 @@ def delete_channel_messages(bot):
             bot.delete_message(chat_id=CHANNEL_ID, message_id=cfg["board"])
             deleted += 1
             time.sleep(0.3)
-        except Exception as e: print(f"⚠️ Board delete failed: {e}")
+        except Exception as e: print(f"️ Board delete failed: {e}")
     for key, msg_id in cfg.get("grids", {}).items():
         try:
             bot.delete_message(chat_id=CHANNEL_ID, message_id=msg_id)
@@ -187,15 +187,15 @@ def start_cmd(update: Update, context: CallbackContext):
         f"• Numbers claimed: {taken}/{TOTAL_NUMBERS}\n"
         f"• Available: {TOTAL_NUMBERS-taken}\n\n"
         "🎯 **How to Play:**\n"
-        "• `/get 42` → Claim number 42\n"
-        "• `/get 100-200` → Claim numbers 100 to 200\n"
-        "• `/check 42` → Check if number is taken (with buttons)\n"
-        "• `/un 42` → Release number 42\n\n"
-        "🎲 **Other Commands:**\n"
-        "• `/stats` → View full statistics\n"
+        "• `/get 42` or `/get 100-200` → Claim numbers\n"
+        "• `/check 42` → Interactive buttons\n"
+        "• `/un 42` or `/un 100-200` → Release numbers\n\n"
+        "️ **Tools:**\n"
+        "• `/refresh` → Rebuild channel grid (preserves data)\n"
+        "• `/reset` → Wipe DB & rebuild grid\n"
         "• `/draw` → Pick 3 random winners\n"
-        "• `/reset` → Reset everything\n"
-        "• `/ping` → Check if bot is online\n\n"
+        "• `/stats` → View summary\n"
+        "• `/ping` → Check uptime\n\n"
         "📌 **Check the channel** for the live number grid!"
     )
     
@@ -203,6 +203,14 @@ def start_cmd(update: Update, context: CallbackContext):
 
 def ping_cmd(update: Update, context: CallbackContext):
     update.message.reply_text(f"✅ Bot is alive! Uptime: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+def refresh_cmd(update: Update, context: CallbackContext):
+    update.message.reply_text("🔄 Refreshing channel grid...")
+    delete_channel_messages(context.bot)
+    time.sleep(1.5)
+    update.message.reply_text("✅ Posting updated grid...")
+    sync_channel_full(context.bot)
+    update.message.reply_text("🎉 Channel grid refreshed! All claims preserved.")
 
 def get_cmd(update: Update, context: CallbackContext):
     start, end, err = parse_range(context.args)
@@ -243,8 +251,8 @@ def un_cmd(update: Update, context: CallbackContext):
         if c.rowcount > 0: released.append(n)
         else: not_taken.append(n)
     conn.commit(); conn.close()
-    msg = f"🔓 Released {len(released)} number(s)!"
-    if not_taken: msg += f"\nℹ️ {len(not_taken)} were already available."
+    msg = f" Released {len(released)} number(s)!"
+    if not_taken: msg += f"\n️ {len(not_taken)} were already available."
     update.message.reply_text(msg, parse_mode="Markdown")
     
     start_block = ((start - 1) // 500) * 500 + 1
@@ -258,7 +266,7 @@ def un_cmd(update: Update, context: CallbackContext):
     update_board_only(context.bot)
 
 def reset_cmd(update: Update, context: CallbackContext):
-    update.message.reply_text("🧹 Deleting old channel messages...")
+    update.message.reply_text(" Deleting old channel messages...")
     delete_channel_messages(context.bot); time.sleep(1.5)
     conn = sqlite3.connect(DB_FILE); c = conn.cursor()
     c.execute("UPDATE numbers SET taken=0, claimed_by=NULL, claimed_at=NULL")
@@ -266,13 +274,13 @@ def reset_cmd(update: Update, context: CallbackContext):
     conn.commit(); conn.close()
     update.message.reply_text("✅ Database cleared. Posting fresh grid...")
     sync_channel_full(context.bot)
-    update.message.reply_text("🎉 Fresh grid posted! Check your channel.")
+    update.message.reply_text(" Fresh grid posted! Check your channel.")
 
 def stats_cmd(update: Update, context: CallbackContext):
     conn = sqlite3.connect(DB_FILE)
     taken = conn.cursor().execute("SELECT COUNT(*) FROM numbers WHERE taken=1").fetchone()[0]
     conn.close()
-    update.message.reply_text(f"📊 {taken}/{TOTAL_NUMBERS} claimed | 🟢 {TOTAL_NUMBERS-taken} left", parse_mode="Markdown")
+    update.message.reply_text(f" {taken}/{TOTAL_NUMBERS} claimed |  {TOTAL_NUMBERS-taken} left", parse_mode="Markdown")
 
 def draw_cmd(update: Update, context: CallbackContext):
     conn = sqlite3.connect(DB_FILE)
@@ -305,7 +313,7 @@ def draw_cmd(update: Update, context: CallbackContext):
             anim_msg.edit_text(text + "\n⏳ Picking next winner...", parse_mode="Markdown")
             time.sleep(2)
     
-    text += "\n✨ **Congratulations to the winners!** ✨"
+    text += "\n✨ **Congratulations to the winners!** "
     anim_msg.edit_text(text, parse_mode="Markdown")
 
 def check_cmd(update: Update, context: CallbackContext):
@@ -351,7 +359,7 @@ def button_handler(update: Update, context: CallbackContext):
             if c.rowcount:
                 c.execute("INSERT INTO claims_log (number, claimed_by, claimed_at) VALUES (?, ?, datetime('now'))", (num, user))
                 conn.commit()
-                new_kb = [[InlineKeyboardButton("🔓 Release", callback_data=f"un_{num}"), InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
+                new_kb = [[InlineKeyboardButton(" Release", callback_data=f"un_{num}"), InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
                 query.edit_message_text(text=f"✅ You claimed **#{num}**!", reply_markup=InlineKeyboardMarkup(new_kb), parse_mode="Markdown")
                 block = ((num - 1) // 500) * 500 + 1
                 update_grid_block(context.bot, block, min(block + 499, TOTAL_NUMBERS)); time.sleep(0.5); update_board_only(context.bot)
@@ -403,6 +411,7 @@ def main():
     dp.add_handler(CommandHandler("get", get_cmd))
     dp.add_handler(CommandHandler("un", un_cmd))
     dp.add_handler(CommandHandler("reset", reset_cmd))
+    dp.add_handler(CommandHandler("refresh", refresh_cmd))  # 🆕 NEW
     dp.add_handler(CommandHandler("stats", stats_cmd))
     dp.add_handler(CommandHandler("check", check_cmd))
     dp.add_handler(CommandHandler("ping", ping_cmd))
