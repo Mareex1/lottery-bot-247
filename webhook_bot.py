@@ -18,6 +18,7 @@ PORT = int(os.getenv("PORT", 10000))
 
 SHOW_RECENT = 6
 BAR_LENGTH = 40
+TOTAL_NUMBERS = 5500  # Changed from 5000 to 5500
 
 def safe_md(text):
     return str(text).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("]", "\\]").replace("`", "\\`")
@@ -33,11 +34,11 @@ def init_database():
     )""")
     cursor.execute("SELECT COUNT(*) FROM numbers")
     if cursor.fetchone()[0] == 0:
-        cursor.executemany("INSERT INTO numbers (number) VALUES (?)", [(i,) for i in range(1, 5001)])
+        cursor.executemany("INSERT INTO numbers (number) VALUES (?)", [(i,) for i in range(1, TOTAL_NUMBERS + 1)])
     cursor.execute("DELETE FROM claims_log WHERE id <= (SELECT MAX(id) - 50 FROM claims_log)")
     conn.commit()
     conn.close()
-    print("✅ Database initialized")
+    print(f"✅ Database initialized with {TOTAL_NUMBERS} numbers")
 
 def load_ids():
     if os.path.exists(CONFIG_FILE):
@@ -92,9 +93,9 @@ def update_board_only(bot):
     recent = get_recent_claims()
     taken = get_taken_numbers()
     
-    pct = round((claimed / 5000) * 100, 1)
-    bar = "🟢" * int((claimed/5000)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/5000)*BAR_LENGTH))
-    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n🟢 Available: {5000-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
+    pct = round((claimed / TOTAL_NUMBERS) * 100, 1)
+    bar = "🟢" * int((claimed/TOTAL_NUMBERS)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/TOTAL_NUMBERS)*BAR_LENGTH))
+    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/{TOTAL_NUMBERS} ({pct}%)\n🟢 Available: {TOTAL_NUMBERS-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
     board += "\n".join([f"• #{n} by {safe_md(u)}" for n, u in recent]) or "• No claims yet"
     
     if cfg.get("board"):
@@ -105,7 +106,7 @@ def update_grid_block(bot, start, end):
     cfg = load_ids()
     taken = get_taken_numbers()
     key = f"{start}-{end}"
-    items = [f"{n} {'✅' if n in taken else '🔲'}" for n in range(start, end + 1)]  # Changed ❌ to 🔲
+    items = [f"{n} {'[X]' if n in taken else '[ ]'}" for n in range(start, end + 1)]  # Text symbols
     text = f"📋 Numbers {start}-{end}:\n" + " ".join(items)
     
     if key in cfg.get("grids", {}):
@@ -119,25 +120,25 @@ def sync_channel_full(bot):
     recent = get_recent_claims()
     taken = get_taken_numbers()
 
-    for start in range(1, 5001, 500):
-        end = start + 499
+    for start in range(1, TOTAL_NUMBERS + 1, 500):
+        end = min(start + 499, TOTAL_NUMBERS)
         key = f"{start}-{end}"
-        items = [f"{n} {'✅' if n in taken else '🔲'}" for n in range(start, end + 1)]  # Changed ❌ to 🔲
+        items = [f"{n} {'[X]' if n in taken else '[ ]'}" for n in range(start, end + 1)]  # Text symbols
         text = f"📋 Numbers {start}-{end}:\n" + " ".join(items)
         
         cfg["grids"][key] = edit_or_send(bot, cfg["grids"].get(key), CHANNEL_ID, text)
         save_ids(cfg)
         time.sleep(0.5)
 
-    pct = round((claimed / 5000) * 100, 1)
-    bar = "🟢" * int((claimed/5000)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/5000)*BAR_LENGTH))
-    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/5000 ({pct}%)\n🟢 Available: {5000-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
+    pct = round((claimed / TOTAL_NUMBERS) * 100, 1)
+    bar = "🟢" * int((claimed/TOTAL_NUMBERS)*BAR_LENGTH) + "⚪️" * (BAR_LENGTH - int((claimed/TOTAL_NUMBERS)*BAR_LENGTH))
+    board = f"🎫 LIVE LOTTERY BOARD\n📊 Claimed: {claimed}/{TOTAL_NUMBERS} ({pct}%)\n🟢 Available: {TOTAL_NUMBERS-claimed}\n{bar}\n\n🕒 Recent Claims:\n"
     board += "\n".join([f"• #{n} by {safe_md(u)}" for n, u in recent]) or "• No claims yet"
     
     cfg["board"] = edit_or_send(bot, cfg.get("board"), CHANNEL_ID, board)
     time.sleep(0.5)
     save_ids(cfg)
-    print("✅ Full channel sync complete - Grids first, Board last")
+    print(f"✅ Full channel sync complete - {TOTAL_NUMBERS} numbers")
 
 def delete_channel_messages(bot):
     cfg = load_ids()
@@ -167,16 +168,15 @@ def parse_range(args):
         try: start, end = int(parts[0]), int(parts[1])
         except ValueError: return None, None, "❌ Numbers must be integers."
         if start > end: start, end = end, start
-        if not (1 <= start <= 5000 and 1 <= end <= 5000): return None, None, "❌ Range must be within 1-5000."
+        if not (1 <= start <= TOTAL_NUMBERS and 1 <= end <= TOTAL_NUMBERS): return None, None, f"❌ Range must be within 1-{TOTAL_NUMBERS}."
         return start, end, None
     else:
         try: num = int(text)
         except ValueError: return None, None, "❌ Invalid number."
-        if not (1 <= num <= 5000): return None, None, "❌ Number must be 1-5000."
+        if not (1 <= num <= TOTAL_NUMBERS): return None, None, f"❌ Number must be 1-{TOTAL_NUMBERS}."
         return num, num, None
 
 def start_cmd(update: Update, context: CallbackContext):
-    # Get current stats
     conn = sqlite3.connect(DB_FILE)
     taken = conn.cursor().execute("SELECT COUNT(*) FROM numbers WHERE taken=1").fetchone()[0]
     conn.close()
@@ -184,8 +184,8 @@ def start_cmd(update: Update, context: CallbackContext):
     welcome_text = (
         "🎉 **WELCOME TO THE LOTTERY BOT!** 🎉\n\n"
         "📊 **Current Status:**\n"
-        f"• Numbers claimed: {taken}/5000\n"
-        f"• Available: {5000-taken}\n\n"
+        f"• Numbers claimed: {taken}/{TOTAL_NUMBERS}\n"
+        f"• Available: {TOTAL_NUMBERS-taken}\n\n"
         "🎯 **How to Play:**\n"
         "• `/get 42` → Claim number 42\n"
         "• `/get 100-200` → Claim numbers 100 to 200\n"
@@ -194,7 +194,7 @@ def start_cmd(update: Update, context: CallbackContext):
         "🎲 **Other Commands:**\n"
         "• `/stats` → View full statistics\n"
         "• `/draw` → Pick 3 random winners\n"
-        "• `/reset` → Reset everything (admin only)\n"
+        "• `/reset` → Reset everything\n"
         "• `/ping` → Check if bot is online\n\n"
         "📌 **Check the channel** for the live number grid!"
     )
@@ -222,12 +222,11 @@ def get_cmd(update: Update, context: CallbackContext):
     if already: msg += f"\n❌ {len(already)} already taken."
     update.message.reply_text(msg, parse_mode="Markdown")
     
-    # ✅ FIXED: Update ALL blocks that the range spans
     start_block = ((start - 1) // 500) * 500 + 1
     end_block = ((end - 1) // 500) * 500 + 1
     
     for block_start in range(start_block, end_block + 1, 500):
-        block_end = block_start + 499
+        block_end = min(block_start + 499, TOTAL_NUMBERS)
         update_grid_block(context.bot, block_start, block_end)
         time.sleep(0.5)
     
@@ -248,12 +247,11 @@ def un_cmd(update: Update, context: CallbackContext):
     if not_taken: msg += f"\nℹ️ {len(not_taken)} were already available."
     update.message.reply_text(msg, parse_mode="Markdown")
     
-    # ✅ FIXED: Update ALL blocks that the range spans
     start_block = ((start - 1) // 500) * 500 + 1
     end_block = ((end - 1) // 500) * 500 + 1
     
     for block_start in range(start_block, end_block + 1, 500):
-        block_end = block_start + 499
+        block_end = min(block_start + 499, TOTAL_NUMBERS)
         update_grid_block(context.bot, block_start, block_end)
         time.sleep(0.5)
     
@@ -274,7 +272,7 @@ def stats_cmd(update: Update, context: CallbackContext):
     conn = sqlite3.connect(DB_FILE)
     taken = conn.cursor().execute("SELECT COUNT(*) FROM numbers WHERE taken=1").fetchone()[0]
     conn.close()
-    update.message.reply_text(f"📊 {taken}/5000 claimed | 🟢 {5000-taken} left", parse_mode="Markdown")
+    update.message.reply_text(f"📊 {taken}/{TOTAL_NUMBERS} claimed | 🟢 {TOTAL_NUMBERS-taken} left", parse_mode="Markdown")
 
 def draw_cmd(update: Update, context: CallbackContext):
     conn = sqlite3.connect(DB_FILE)
@@ -299,7 +297,7 @@ def draw_cmd(update: Update, context: CallbackContext):
     winners = random.sample(claimed, num_to_pick)
     time.sleep(2)
     
-    text = "🎉 **FINAL DRAW RESULTS!**\n\n📊 Total claimed: {}/5000\n🏆 Winning Numbers ({}/3):\n\n".format(len(claimed), num_to_pick)
+    text = "🎉 **FINAL DRAW RESULTS!**\n\n📊 Total claimed: {}/{}\n🏆 Winning Numbers ({}/3):\n\n".format(len(claimed), TOTAL_NUMBERS, num_to_pick)
     
     for i, (num,) in enumerate(winners, 1):
         text += "🥇 **#{} Place:** {}\n".format(i, num)
@@ -323,10 +321,10 @@ def check_cmd(update: Update, context: CallbackContext):
     owner = row[1] if is_taken else None
     user = update.message.from_user.username or f"User{update.message.from_user.id}"
     if is_taken:
-        text = f"Number **#{num}** is:\n✅ Taken by {safe_md(owner)}"
+        text = f"Number **#{num}** is:\n[X] Taken by {safe_md(owner)}"
         keyboard = [[InlineKeyboardButton("🔓 Release", callback_data=f"un_{num}")]] if owner == user else [[]]
     else:
-        text = f"Number **#{num}** is:\n🔲 Available"  # Changed ❌ to 🔲
+        text = f"Number **#{num}** is:\n[ ] Available"
         keyboard = [[InlineKeyboardButton("✅ Claim", callback_data=f"claim_{num}")]]
     keyboard[0].append(InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}"))
     update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -356,7 +354,7 @@ def button_handler(update: Update, context: CallbackContext):
                 new_kb = [[InlineKeyboardButton("🔓 Release", callback_data=f"un_{num}"), InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
                 query.edit_message_text(text=f"✅ You claimed **#{num}**!", reply_markup=InlineKeyboardMarkup(new_kb), parse_mode="Markdown")
                 block = ((num - 1) // 500) * 500 + 1
-                update_grid_block(context.bot, block, block + 499); time.sleep(0.5); update_board_only(context.bot)
+                update_grid_block(context.bot, block, min(block + 499, TOTAL_NUMBERS)); time.sleep(0.5); update_board_only(context.bot)
             else:
                 query.edit_message_text(text=f"❌ #{num} is already taken!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]), parse_mode="Markdown")
                 
@@ -369,16 +367,16 @@ def button_handler(update: Update, context: CallbackContext):
                 new_kb = [[InlineKeyboardButton("✅ Claim", callback_data=f"claim_{num}"), InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
                 query.edit_message_text(text=f"🔓 Released **#{num}**!", reply_markup=InlineKeyboardMarkup(new_kb), parse_mode="Markdown")
                 block = ((num - 1) // 500) * 500 + 1
-                update_grid_block(context.bot, block, block + 499); time.sleep(0.5); update_board_only(context.bot)
+                update_grid_block(context.bot, block, min(block + 499, TOTAL_NUMBERS)); time.sleep(0.5); update_board_only(context.bot)
             else:
                 query.edit_message_text(text=f"ℹ️ #{num} is already available.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]), parse_mode="Markdown")
                 
         elif action == "refresh":
             if is_taken:
-                text = f"Number **#{num}** is:\n✅ Taken by {safe_md(owner)}"
+                text = f"Number **#{num}** is:\n[X] Taken by {safe_md(owner)}"
                 kb = [[InlineKeyboardButton("🔓 Release", callback_data=f"un_{num}"), InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]] if owner == user else [[InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
             else:
-                text = f"Number **#{num}** is:\n🔲 Available"  # Changed ❌ to 🔲
+                text = f"Number **#{num}** is:\n[ ] Available"
                 kb = [[InlineKeyboardButton("✅ Claim", callback_data=f"claim_{num}"), InlineKeyboardButton("🔄 Refresh", callback_data=f"refresh_{num}")]]
             query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
             
@@ -411,7 +409,7 @@ def main():
     dp.add_handler(CommandHandler("draw", draw_cmd))
     dp.add_handler(CallbackQueryHandler(button_handler))
     
-    print("🔄 Syncing channel (Grids → Board)...")
+    print(f"🔄 Syncing channel ({TOTAL_NUMBERS} numbers, Grids → Board)...")
     sync_channel_full(updater.bot)
     print("✅ Bot ready!")
     updater.start_polling(); updater.idle()
