@@ -56,6 +56,18 @@ def edit_or_send(bot, msg_id, chat_id, text):
         try:
             bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, parse_mode="Markdown")
             return msg_id
+        except TelegramError as e:
+            print(f"⚠️ Edit failed: {e}") # This will show us the exact error!
+    try:
+        msg = bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
+        return msg.message_id
+    except Exception as e:
+        print(f"❌ Send failed: {e}") # This will show us the exact error!
+        return msg_id
+    if msg_id:
+        try:
+            bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=text, parse_mode="Markdown")
+            return msg_id
         except TelegramError:
             pass
     try:
