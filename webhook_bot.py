@@ -11,7 +11,7 @@ from telegram.error import TelegramError
 
 #  CONFIG
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = os.getenv("CHANNEL_ID", "@emun2ti")  # Updated to your new group
+CHANNEL_ID = "@emun2ti"
 DB_FILE = "lottery_numbers.db"
 CONFIG_FILE = "channel_ids.json"
 PORT = int(os.getenv("PORT", 10000))
