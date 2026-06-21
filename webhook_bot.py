@@ -11,7 +11,8 @@ from telegram.error import TelegramError
 
 #  CONFIG
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = "@emun2ti"
+# Hardcoded to prevent hosting platform environment variables from overriding it
+CHANNEL_ID = "@emun2ti" 
 DB_FILE = "lottery_numbers.db"
 CONFIG_FILE = "channel_ids.json"
 PORT = int(os.getenv("PORT", 10000))
